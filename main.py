@@ -1,0 +1,81 @@
+import numpy as np 
+import matplotlib.pyplot as plt 
+import nibabel as nib
+import os 
+import cv2
+from  Preprocess import *
+from Segmentation import *
+from Optimization import *
+
+
+
+def Train():
+    #reading the data
+    def normalize(image):
+        return (image - np.min(image)) / (np.max(image) - np.min(image))
+    
+    def load_patient(path):
+        flair = normalize(nib.load(path + '_flair.nii').get_fdata())
+        t1 = normalize(nib.load(path + '_t1.nii').get_fdata())
+        t1ce = normalize(nib.load(path + '_t1ce.nii').get_fdata())
+        t2 = normalize(nib.load(path + '_t2.nii').get_fdata())
+        seg = nib.load(path + '_seg.nii').get_fdata()
+    
+        # Slice-wise preparation (example: axial view)
+        X_slices = []
+        y_slices = []
+    
+        for i in range(flair.shape[2]):
+            # Stack modalities as channels
+            img = np.stack([flair[:, :, i], t1[:, :, i], t1ce[:, :, i], t2[:, :, i]], axis=-1)
+            mask = seg[:, :, i]
+    
+            # Resize (optional)
+            img = cv2.resize(img, (128, 128))
+            mask = cv2.resize(mask, (128, 128), interpolation=cv2.INTER_NEAREST)
+    
+            X_slices.append(img)
+            y_slices.append(mask)
+    
+        return np.array(X_slices), np.array(y_slices)
+    
+    
+    overall_images,overall_masks,preprocessed_images=[],[],[]
+    folder_path="Brats2019"   
+    path_list=os.listdir(folder_path)
+    
+    for i in path_list:
+        sub_dir_path=folder_path+"/"+i
+        sub_dir_list=os.listdir(sub_dir_path)
+        for j in sub_dir_list:
+            images_path=sub_dir_path+"/"+j
+            images,masks=load_patient(images_path+'/'+j)
+            for img,msk in zip(images,masks):
+                gray = np.mean(img, axis=-1)
+                #preprocessing 
+                #Weighted Mean Gaussian Filter (WMHF) and Adaptive Histogram Equalization 
+                preprocessed_image= preprocess_image(gray)
+              
+                overall_images.append(img)
+                overall_masks.append(msk)
+                preprocessed_images.append(preprocessed_image)
+                
+    
+   
+    
+    
+    images=np.load("Features/Dataset1/preprocessed_images.npy")
+    images=images.reshape(preprocessed_images.shape[0],preprocessed_images.shape[1],preprocessed_images.shape[2],1)
+    masks=np.load("Features/Dataset1/overall_masks Images.npy")
+    overall_masks=overall_masks.reshape(overall_masks.shape[0],overall_masks.shape[1],overall_masks.shape[2],1)
+    
+    
+    #Segmenting
+    # Residual Autoencoder-based Enhanced K-Means Clustering 
+    # Secretary Bird Optimization (SBO) algorithm
+    autoencoder = residual_autoencoder((128, 128, 3))
+    opt=SBOA()
+    autoencoder.compile(optimizer=opt, loss='mse')
+    autoencoder.fit(images, overall_masks, epochs=100,batch_size=32)
+    
+
