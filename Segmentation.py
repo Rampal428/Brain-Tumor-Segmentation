@@ -5,38 +5,106 @@ from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 import cv2
 
-# -------------------------- Residual Block --------------------------
-def residual_block(x, filters):
-    shortcut = x
-    x = layers.Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Conv2D(filters, (3, 3), padding='same')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Add()([shortcut, x])
-    return tf.nn.relu(x)
 
-# --------------------- Residual Autoencoder ---------------------
-def residual_autoencoder(input_shape):
+def residual_block(x, filters):
+
+    shortcut = x
+
+    x = layers.Conv2D(
+        filters, 3,
+        padding='same',
+        activation='relu'
+    )(x)
+
+    x = layers.BatchNormalization()(x)
+
+    x = layers.Conv2D(
+        filters, 3,
+        padding='same'
+    )(x)
+
+    x = layers.BatchNormalization()(x)
+
+    x = layers.Add()([shortcut, x])
+
+    x = layers.Activation('relu')(x)
+
+    return x
+
+# ============================================================
+# 5. RESIDUAL AUTOENCODER
+# ============================================================
+
+def residual_autoencoder(input_shape, filters):
+
     inputs = layers.Input(shape=input_shape)
 
-    # Encoder
-    x = layers.Conv2D(32, (3, 3), padding='same', strides=2, activation='relu')(inputs)
-    x = residual_block(x, 32)
-    x = layers.Conv2D(64, (3, 3), padding='same', strides=2, activation='relu')(x)
-    x = residual_block(x, 64)
+    # ---------------- ENCODER ----------------
 
-    # Bottleneck
-    encoded = layers.Conv2D(128, (3, 3), padding='same', activation='relu', name='encoded_features')(x)
+    x = layers.Conv2D(
+        filters, 3,
+        strides=2,
+        padding='same',
+        activation='relu'
+    )(inputs)
 
-    # Decoder
-    x = layers.Conv2DTranspose(64, (3, 3), strides=2, padding='same', activation='relu')(encoded)
-    x = residual_block(x, 64)
-    x = layers.Conv2DTranspose(32, (3, 3), strides=2, padding='same', activation='relu')(x)
-    x = residual_block(x, 32)
+    x = residual_block(x, filters)
 
-    decoded = layers.Conv2D(input_shape[-1], (3, 3), padding='same', activation='sigmoid')(x)
+    x = layers.Conv2D(
+        filters * 2, 3,
+        strides=2,
+        padding='same',
+        activation='relu'
+    )(x)
 
-    return models.Model(inputs, decoded, name='ResidualAutoencoder')
+    x = residual_block(x, filters * 2)
+
+    # ---------------- BOTTLENECK ----------------
+
+    encoded = layers.Conv2D(
+        filters * 4, 3,
+        padding='same',
+        activation='relu',
+        name='encoded_features'
+    )(x)
+
+    # ---------------- DECODER ----------------
+
+    x = layers.Conv2DTranspose(
+        filters * 2, 3,
+        strides=2,
+        padding='same',
+        activation='relu'
+    )(encoded)
+
+    x = residual_block(x, filters * 2)
+
+    x = layers.Conv2DTranspose(
+        filters, 3,
+        strides=2,
+        padding='same',
+        activation='relu'
+    )(x)
+
+    x = residual_block(x, filters)
+
+    # ---------------- OUTPUT ----------------
+
+    outputs = layers.Conv2D(
+        1,
+        3,
+        padding='same',
+        activation='sigmoid',
+        name='segmentation_output'
+    )(x)
+
+    model = models.Model(
+        inputs,
+        outputs,
+        name='SBOA_Residual_Autoencoder'
+    )
+
+    return model
 
 # --------------------- Improved K-Means on Features ---------------------
 def improved_kmeans(features, n_clusters=4):
